@@ -1,0 +1,56 @@
+# Events
+on:
+  # Push to master
+  push:
+    tags: 
+      - '*'
+  # Manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - id: create_release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          prerelease: false
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+
+  build:
+    if: always() && (needs.release.result == 'success' || needs.release.result == 'skipped')
+    needs: release
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    env:
+      file_name: ${{ format('github-actions-workshop-rust{0}', (matrix.os == 'windows-latest' && '.exe' || '')) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      - name: Set up cache
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+
+      - name: Upload the build artifact
+        if: ${{ github.event_name == 'push' }}
+        uses: shogo82148/actions-upload-release-asset@v1
+        with:
+          upload_url: ${{ needs.release.outputs.upload_url }}
+          asset_path: ${{ format('target/release/{0}', env.file_name) }}
