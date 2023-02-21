@@ -7,31 +7,66 @@ on:
   # Manual trigger
   workflow_dispatch:
 
+# Set up permissions
 permissions:
   contents: write
+  # Needed by the action to create releases
   pull-requests: read
 
 jobs:
+  # Job to create the release
   release:
+    # Only run when creating a tag (not when manually triggering)
     if: ${{ github.event_name == 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # type of VM
+    # Declare the outputs of the job to be used in the build job later.
     outputs:
+      # This output is a re-export of an output provided by the action 
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
-      - id: create_release
+      - id: create_release # Give the step an unique identifier so that we can
+                           # refer to it when setting up the outputs
+        name: Create release
         uses: marvinpinto/action-automatic-releases@latest
+        # Pass the needed inputs
         with:
           prerelease: false
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
 
+  # Job to build the executable
   build:
+    # This ensures that the job runs even if the release job is skipped.
+    #
+    # `always()` signals that this function must be evaluated, otherwise
+    # if the release job was skipped this job would also be skipped even
+    # if the condition were to evaluate to true.
     if: always() && (needs.release.result == 'success' || needs.release.result == 'skipped')
+    # Establish a dependency between this job and the release job
     needs: release
+    # The strategy property defines how the job is scheduled and executed
     strategy:
+      # Define a job matrix.
+      #
+      # A matrix spawns a job for each of the possible combinations of its inputs.
+      #
+      # The matrix values for the current job can be accessed trough the `matrix` variable.
       matrix:
         os: [windows-latest, ubuntu-latest]
+        # version: [3.9, 3.10]
+        # If the line above was enabled 4 jobs would be spawned with the matrix
+        # variable having the following values: 
+        # Job 1 - { os: windows-latest, version: 3.9 }
+        # Job 2 - { os: ubuntu-latest, version: 3.10 }
+        # Job 3 - { os: windows-latest, version: 3.9 }
+        # Job 4 - { os: ubuntu-latest, version: 3.10 }
+    # The env property allows defining variables that can be accessed trought the job 
+    # either as environment variables or trough templating.
     env:
+      # This defines a variable `file_name` that will have the binary filename
+      # with the correct extension for the current operating system
       file_name: ${{ format('github-actions-workshop-rust{0}', (matrix.os == 'windows-latest' && '.exe' || '')) }}
+    # The type of VM is dynamically selected trough the matrix (this way different
+    # machine types can be spawned for the same job)
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out
@@ -49,8 +84,11 @@ jobs:
         run: cargo build --release
 
       - name: Upload the build artifact
+        # Like the release job, this step only runs when creating a tag
         if: ${{ github.event_name == 'push' }}
         uses: shogo82148/actions-upload-release-asset@v1
         with:
+          # Use the release job's output
           upload_url: ${{ needs.release.outputs.upload_url }}
+          # Use the variable defined in the `env` section
           asset_path: ${{ format('target/release/{0}', env.file_name) }}

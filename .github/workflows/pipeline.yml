@@ -20,9 +20,10 @@ jobs:
           toolchain: stable
           override: true
           components: rustfmt, clippy
+
       - name: Set up cache
         uses: Swatinem/rust-cache@v2
-      # ^ This simple to setup a cache 
+
       - name: Lint
         run: |
           cargo fmt --all -- --check
