@@ -20,6 +20,7 @@ jobs:
           toolchain: stable
           override: true
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - name: Lint
         run: |
           cargo fmt --all -- --check
